@@ -22,22 +22,25 @@ st.write(
 
 
 # ----------------------------
-# Gemini APIの設定
+# Gemini APIの設定（Streamlit Secrets）
 # ----------------------------
 MODEL = "gemini-3.8-flash"
 
-api_key = st.text_input(
-    "Gemini API Key",
-    type="password",
-    help="Google AI Studioで取得したAPIキーを入力してください。",
-)
+try:
+    api_key = st.secrets["GEMINI_API_KEY"]
+except (KeyError, FileNotFoundError):
+    st.error(
+        "Gemini APIキーが設定されていません。"
+        "Secrets に GEMINI_API_KEY を設定してください。"
+    )
+    st.stop()
 
-# APIキーが未入力なら、Streamlit Secretsも確認
-if not api_key:
-    try:
-        api_key = st.secrets.get("GEMINI_API_KEY", "")
-    except Exception:
-        api_key = ""
+if not api_key or not str(api_key).strip():
+    st.error(
+        "Gemini APIキーが空です。"
+        "Secrets の GEMINI_API_KEY を確認してください。"
+    )
+    st.stop()
 
 
 # ----------------------------
@@ -182,8 +185,10 @@ with st.sidebar:
         st.rerun()
 
 
+# ----------------------------
 # 過去の会話を表示
-for index, message in enumerate(st.session_state.messages):
+# ----------------------------
+for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         if message["role"] == "user":
             st.markdown(message["content"])
@@ -207,13 +212,6 @@ if st.session_state.get("pending_prompt"):
 
 
 if prompt:
-    if not api_key:
-        st.warning(
-            "Gemini APIキーを入力してください。"
-            "Google AI StudioでAPIキーを取得できます。"
-        )
-        st.stop()
-
     # ユーザーの入力を保存・表示
     st.session_state.messages.append(
         {"role": "user", "content": prompt}
@@ -257,9 +255,11 @@ if prompt:
                 "もう一度お試しください。"
             )
 
-        except Exception as e:
-            st.error(f"分析中にエラーが発生しました: {e}")
-            st.info(
+        except Exception:
+            st.error(
+                "分析中にエラーが発生しました。"
                 "APIキー、利用モデル、APIの利用制限、"
                 "インターネット接続を確認してください。"
             )
+            st.info(
+                "Gemini APIの設定と利用状況を確認してください。"
