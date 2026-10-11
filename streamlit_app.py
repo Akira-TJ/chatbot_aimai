@@ -24,7 +24,7 @@ st.write(
 # ----------------------------
 # Gemini APIの設定
 # ----------------------------
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 
 api_key = st.text_input(
     "Gemini API Key",
