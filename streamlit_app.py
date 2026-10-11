@@ -22,25 +22,35 @@ st.write(
 
 
 # ----------------------------
-# Gemini APIの設定（Streamlit Secrets）
+# Gemini APIの設定
+# Streamlit SecretsからAPIキーを取得
 # ----------------------------
 MODEL = "gemini-3.8-flash"
 
-try:
-    api_key = st.secrets["GEMINI_API_KEY"]
-except (KeyError, FileNotFoundError):
-    st.error(
-        "Gemini APIキーが設定されていません。"
-        "Secrets に GEMINI_API_KEY を設定してください。"
-    )
-    st.stop()
 
-if not api_key or not str(api_key).strip():
-    st.error(
-        "Gemini APIキーが空です。"
-        "Secrets の GEMINI_API_KEY を確認してください。"
-    )
-    st.stop()
+def get_api_key():
+    """Streamlit SecretsからGemini APIキーを取得する。"""
+    try:
+        api_key = st.secrets["GEMINI_API_KEY"]
+    except (KeyError, FileNotFoundError):
+        st.error(
+            "Gemini APIキーが設定されていません。"
+            "Streamlit Secretsに"
+            "GEMINI_API_KEYを設定してください。"
+        )
+        st.stop()
+
+    if not isinstance(api_key, str) or not api_key.strip():
+        st.error(
+            "Gemini APIキーが空です。"
+            "Secretsの設定を確認してください。"
+        )
+        st.stop()
+
+    return api_key.strip()
+
+
+api_key = get_api_key()
 
 
 # ----------------------------
@@ -97,7 +107,9 @@ Markdownのコードブロックで囲まず、JSONのみを返してくださ�
 # ----------------------------
 def display_result(original_text, result):
     st.markdown("### 🔎 分析結果")
-    st.write(result.get("summary", "分析が完了しました。"))
+    st.write(
+        result.get("summary", "分析が完了しました。")
+    )
 
     issues = result.get("issues", [])
 
@@ -115,12 +127,15 @@ def display_result(original_text, result):
                 st.markdown("**指摘する理由**")
                 st.write(issue.get("reason", ""))
     else:
-        st.success("明確にすべき不足項目は見つかりませんでした。")
+        st.success(
+            "明確にすべき不足項目は見つかりませんでした。"
+        )
 
     questions = result.get("questions", [])
 
     if questions:
         st.markdown("#### ❓ 追加で確認したいこと")
+
         for question in questions:
             st.markdown(f"- {question}")
 
@@ -128,8 +143,10 @@ def display_result(original_text, result):
 
     original_col, improved_col = st.columns(2)
 
+    # 元の依頼文
     with original_col:
         st.markdown("#### 📄 元の文章")
+
         st.text_area(
             "元の依頼文",
             value=original_text,
@@ -138,8 +155,10 @@ def display_result(original_text, result):
             key=f"original_{len(original_text)}_{hash(original_text)}",
         )
 
+    # 改善後の依頼文
     with improved_col:
         st.markdown("#### ✨ 改善後の文章")
+
         improved_text = result.get("improved_text", "")
 
         st.text_area(
@@ -160,12 +179,15 @@ def display_result(original_text, result):
 
 
 # ----------------------------
-# チャット履歴
+# チャット履歴の初期化
 # ----------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 
+# ----------------------------
+# サイドバー
+# ----------------------------
 with st.sidebar:
     st.markdown("### 💡 入力例")
 
@@ -175,11 +197,19 @@ with st.sidebar:
         "顧客向けのメールを適切な感じで修正してください",
     ]
 
-    for example in examples:
-        if st.button(example, use_container_width=True):
+    for index, example in enumerate(examples):
+        if st.button(
+            example,
+            use_container_width=True,
+            key=f"example_{index}",
+        ):
             st.session_state.pending_prompt = example
+            st.rerun()
 
-    if st.button("🗑️ 履歴をクリア", use_container_width=True):
+    if st.button(
+        "🗑️ 履歴をクリア",
+        use_container_width=True,
+    ):
         st.session_state.messages = []
         st.session_state.pop("pending_prompt", None)
         st.rerun()
@@ -188,7 +218,7 @@ with st.sidebar:
 # ----------------------------
 # 過去の会話を表示
 # ----------------------------
-for message in st.session_state.messages:
+for index, message in enumerate(st.session_state.messages):
     with st.chat_message(message["role"]):
         if message["role"] == "user":
             st.markdown(message["content"])
@@ -207,14 +237,17 @@ prompt = st.chat_input(
 )
 
 # サイドバーの入力例にも対応
-if st.session_state.get("pending_prompt"):
+if "pending_prompt" in st.session_state:
     prompt = st.session_state.pop("pending_prompt")
 
 
 if prompt:
-    # ユーザーの入力を保存・表示
+    # ユーザーの入力を保存
     st.session_state.messages.append(
-        {"role": "user", "content": prompt}
+        {
+            "role": "user",
+            "content": prompt,
+        }
     )
 
     with st.chat_message("user"):
@@ -222,9 +255,13 @@ if prompt:
 
     with st.chat_message("assistant"):
         try:
+            # Geminiクライアントを作成
             client = genai.Client(api_key=api_key)
 
-            with st.spinner("依頼文の曖昧さを分析しています..."):
+            # Gemini APIで依頼文を分析
+            with st.spinner(
+                "依頼文の曖昧さを分析しています..."
+            ):
                 response = client.models.generate_content(
                     model=MODEL,
                     contents=prompt,
@@ -235,12 +272,23 @@ if prompt:
                     ),
                 )
 
+            # APIレスポンスをJSONとして解析
+            if not response.text:
+                raise ValueError(
+                    "Gemini APIから空の回答が返されました。"
+                )
+
             result = json.loads(response.text)
+
+            if not isinstance(result, dict):
+                raise ValueError(
+                    "AIの回答が想定したJSON形式ではありません。"
+                )
 
             # 分析結果を表示
             display_result(prompt, result)
 
-            # 次回の再描画でも表示できるように保存
+            # 分析結果を履歴に保存
             st.session_state.messages.append(
                 {
                     "role": "assistant",
@@ -256,10 +304,13 @@ if prompt:
             )
 
         except Exception:
+            # APIキーなどの機密情報を含む例外詳細は表示しない
             st.error(
                 "分析中にエラーが発生しました。"
-                "APIキー、利用モデル、APIの利用制限、"
+                "APIキー、モデル名、APIの利用制限、"
                 "インターネット接続を確認してください。"
             )
             st.info(
-                "Gemini APIの設定と利用状況を確認してください。"
+                "Streamlit Secretsの設定と"
+                "Gemini APIの利用状況を確認してください。"
+            )
